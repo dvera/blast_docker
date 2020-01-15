@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+if [[ -z $PROGRAM ]]; then
+  PROGRAM="blastn"
+fi
+
+if [ -z $INPUT ]; then
+  echo "INPUT NOT DEFINED" > /dev/stderr
+  exit 1
+fi
+
+if [ -z $OUTPUT ]; then
+  echo "OUTPUT NOT DEFINED" > /dev/stderr
+  exit 1
+fi
+
+if [ -z $DB ]; then
+  echo "DB NOT DEFINED" > /dev/stderr
+  exit 1
+fi
+
+if [ -z $OUTFMT ]; then
+  OUTFMT=6
+fi
+
+if [ -z $THREADS ]; then
+  THREADS=1
+fi
+
+if [ $PROGRAM == "blastn" ]; then
+  if [ -z $TASK ]; then
+    TASK="megablast"
+  fi
+fi
+
+
+#INPUT_BASE=$(basename $INPUT)
+INPUT_BUCKET=$(echo $INPUT | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
+INPUT_PATH=$(echo "${INPUT#*/}")
+#INPUT_BUCKET_DIR="/${INPUT_BUCKET}"
+
+#OUTPUT_BASE=$(basename $OUTPUT)
+OUTPUT_BUCKET=$(echo $OUTPUT | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
+OUTPUT_PATH=$(echo "${OUTPUT#*/}")
+#OUTPUT_BUCKET_DIR="/${OUTPUT_BUCKET}"
+
+DB_BUCKET=$(echo $DB | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
+DB_PATH=$(echo "${DB#*/}")
+#DB_DIR="/${DB_BUCKET}"
+
+for bucket in $(echo $INPUT_BUCKET $OUTPUT_BUCKET $DB_BUCKET | tr ' ' '\n' | sort | uniq); do
+  echo "mkdir -p /$bucket"
+  mkdir -p /$bucket
+  echo "s3fs $bucket /$bucket -o iam_role=auto"
+  s3fs $bucket /$bucket -o iam_role=auto
+done
+#
+# mkdir -p $INPUT_BUCKET_DIR
+# s3fs $INPUT_BUCKET $INPUT_BUCKET_DIR -o iam_role=auto
+#
+# mkdir -p $DB_DIR
+# s3fs $DB_BUCKET $BUCKET_DIR -o iam_role=auto
+echo "
+$PROGRAM \
+-db $DB_PATH \
+-out $OUTPUT_PATH \
+-num_threads $THREADS \
+-task $TASK \
+-outfmt $OUTFMT \
+$BLAST_ARGS
+"
+
+$PROGRAM \
+-db $DB_PATH \
+-out $OUTPUT_PATH \
+-num_threads $THREADS \
+-task $TASK \
+-outfmt $OUTFMT \
+$BLAST_ARGS
+
+
