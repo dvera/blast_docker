@@ -43,7 +43,7 @@ INPUT_MOUNT=$(echo $INPUT | grep "/mnt/efs/" | cut -d '/' -f 1-4)
 
 #OUTPUT_BASE=$(basename $OUTPUT)
 #OUTPUT_BUCKET=$(echo $OUTPUT | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
-OUTPUT_BUCKET=$(echo $OUTPUT | grep "/mnt/efs/" | cut -d '/' -f 4)
+#OUTPUT_BUCKET=$(echo $OUTPUT | grep "/mnt/efs/" | cut -d '/' -f 4)
 #OUTPUT_PATH=$(echo "${OUTPUT#*/}")
 #OUTPUT_BUCKET_DIR="/${OUTPUT_BUCKET}"
 OUTPUT_MOUNT=$(echo $OUTPUT | grep "/mnt/efs/" | cut -d '/' -f 1-4)
