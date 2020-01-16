@@ -35,24 +35,45 @@ fi
 
 
 #INPUT_BASE=$(basename $INPUT)
-INPUT_BUCKET=$(echo $INPUT | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
-INPUT_PATH=$(echo "${INPUT#*/}")
+#INPUT_BUCKET=$(echo $INPUT | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
+INPUT_BUCKET=$(echo $INPUT | grep "/mnt/efs/" | cut -d '/' -f 4)
+#INPUT_PATH=$(echo "${INPUT#*/}")
 #INPUT_BUCKET_DIR="/${INPUT_BUCKET}"
+INPUT_MOUNT=$(echo $INPUT | grep "/mnt/efs/" | cut -d '/' -f 1-4)
 
 #OUTPUT_BASE=$(basename $OUTPUT)
-OUTPUT_BUCKET=$(echo $OUTPUT | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
-OUTPUT_PATH=$(echo "${OUTPUT#*/}")
+#OUTPUT_BUCKET=$(echo $OUTPUT | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
+OUTPUT_BUCKET=$(echo $OUTPUT | grep "/mnt/efs/" | cut -d '/' -f 4)
+#OUTPUT_PATH=$(echo "${OUTPUT#*/}")
 #OUTPUT_BUCKET_DIR="/${OUTPUT_BUCKET}"
+OUTPUT_MOUNT=$(echo $OUTPUT | grep "/mnt/efs/" | cut -d '/' -f 1-4)
 
-DB_BUCKET=$(echo $DB | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
-DB_PATH=$(echo "${DB#*/}")
+DB_BUCKET=$(echo $DB | grep "/mnt/efs/" | cut -d '/' -f 4)
+#DB_BUCKET=$(echo $DB | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
+#DB_PATH=$(echo "${DB#*/}")
 #DB_DIR="/${DB_BUCKET}"
+DB_MOUNT=$(echo $DB | grep "/mnt/efs/" | cut -d '/' -f 1-4)
 
-for bucket in $(echo $INPUT_BUCKET $OUTPUT_BUCKET $DB_BUCKET | tr ' ' '\n' | sort | uniq); do
-  echo "mkdir -p /$bucket"
-  mkdir -p /$bucket
-  echo "s3fs $bucket /$bucket -o iam_role=auto"
-  s3fs $bucket /$bucket -o iam_role=auto
+for bucket_mount in $(echo $INPUT_MOUNT $OUTPUT_MOUNT $DB_MOUNT | tr ' ' '\n' | sort | uniq); do
+  bucket=$(echo $bucket_mount | grep "/mnt/efs/" | cut -d '/' -f 4)
+  echo "mkdir -p $bucket_mount"
+  mkdir -p $bucket_mount
+  AWS_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`
+  AWS_REGION=${AWS_AVAIL_ZONE::-1}
+  INTERFACE=$(curl --silent http://169.254.169.254/latest/meta-data/network/interfaces/macs/)
+  SUBNET_ID=$(curl --silent http://169.254.169.254/latest/meta-data/network/interfaces/macs/${INTERFACE}/subnet-id)
+  EFS_ID=$(aws efs describe-file-systems --region $AWS_REGION | jp -u "FileSystems[?Name=='$bucket'].FileSystemId | [0]")
+  if [[ $? -ne 0 || -z $EFS_ID || $EFS_ID == "null" ]]; then
+    echo "$0: unable to find EFS ID for EFS name '$bucket'"; exit 1
+  fi
+  mount -t nfs -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 $EFS_IP:/ $bucket_mount
+  if [[ $? -ne 0 ]]; then
+    echo "unable to mount EFS $bucket IP $EFS_IP to $bucket_mount, exit code $?"; exit 1
+  fi
+  echo "$0: mounted EFS $bucket in subnet $SUBNET_ID with IP $EFS_IP to $bucket_mount"
+
+#  echo "s3fs $bucket /$bucket -o iam_role=auto"
+#  s3fs $bucket /$bucket -o iam_role=auto
 done
 #
 # mkdir -p $INPUT_BUCKET_DIR
@@ -62,8 +83,9 @@ done
 # s3fs $DB_BUCKET $BUCKET_DIR -o iam_role=auto
 echo "
 $PROGRAM \
--db $DB_PATH \
--out $OUTPUT_PATH \
+-query $INPUT \
+-db $DB \
+-out $OUTPUT \
 -num_threads $THREADS \
 -task $TASK \
 -outfmt $OUTFMT \
@@ -71,11 +93,16 @@ $BLAST_ARGS
 "
 
 $PROGRAM \
--db $DB_PATH \
--out $OUTPUT_PATH \
+-query $INPUT \
+-db $DB \
+-out $OUTPUT \
 -num_threads $THREADS \
 -task $TASK \
 -outfmt $OUTFMT \
 $BLAST_ARGS
+
+for bucket_mount in $(echo $INPUT_MOUNT $OUTPUT_MOUNT $DB_MOUNT | tr ' ' '\n' | sort | uniq); do
+  umount $bucket_mount
+done
 
 
