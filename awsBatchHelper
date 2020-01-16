@@ -14,10 +14,10 @@ if [ -z $OUTPUT ]; then
   exit 1
 fi
 
-if [ -z $DB ]; then
-  echo "DB NOT DEFINED" > /dev/stderr
-  exit 1
-fi
+#if [ -z $DB ]; then
+#  echo "DB NOT DEFINED" > /dev/stderr
+#  exit 1
+#fi
 
 if [ -z $OUTFMT ]; then
   OUTFMT=6
@@ -48,13 +48,13 @@ OUTPUT_BUCKET=$(echo $OUTPUT | grep "/mnt/efs/" | cut -d '/' -f 4)
 #OUTPUT_BUCKET_DIR="/${OUTPUT_BUCKET}"
 OUTPUT_MOUNT=$(echo $OUTPUT | grep "/mnt/efs/" | cut -d '/' -f 1-4)
 
-DB_BUCKET=$(echo $DB | grep "/mnt/efs/" | cut -d '/' -f 4)
+#DB_BUCKET=$(echo $DB | grep "/mnt/efs/" | cut -d '/' -f 4)
 #DB_BUCKET=$(echo $DB | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
 #DB_PATH=$(echo "${DB#*/}")
 #DB_DIR="/${DB_BUCKET}"
-DB_MOUNT=$(echo $DB | grep "/mnt/efs/" | cut -d '/' -f 1-4)
+#DB_MOUNT=$(echo $DB | grep "/mnt/efs/" | cut -d '/' -f 1-4)
 
-for bucket_mount in $(echo $INPUT_MOUNT $OUTPUT_MOUNT $DB_MOUNT | tr ' ' '\n' | sort | uniq); do
+for bucket_mount in $(echo $INPUT_MOUNT $OUTPUT_MOUNT  | tr ' ' '\n' | sort | uniq); do
   bucket=$(echo $bucket_mount | grep "/mnt/efs/" | cut -d '/' -f 4)
   echo "mkdir -p $bucket_mount"
   mkdir -p $bucket_mount
@@ -62,10 +62,17 @@ for bucket_mount in $(echo $INPUT_MOUNT $OUTPUT_MOUNT $DB_MOUNT | tr ' ' '\n' | 
   AWS_REGION=${AWS_AVAIL_ZONE::-1}
   INTERFACE=$(curl --silent http://169.254.169.254/latest/meta-data/network/interfaces/macs/)
   SUBNET_ID=$(curl --silent http://169.254.169.254/latest/meta-data/network/interfaces/macs/${INTERFACE}/subnet-id)
+
   EFS_ID=$(aws efs describe-file-systems --region $AWS_REGION | jp -u "FileSystems[?Name=='$bucket'].FileSystemId | [0]")
   if [[ $? -ne 0 || -z $EFS_ID || $EFS_ID == "null" ]]; then
     echo "$0: unable to find EFS ID for EFS name '$bucket'"; exit 1
   fi
+  
+  EFS_IP=$(aws efs describe-mount-targets --file-system-id $EFS_ID --region $AWS_REGION | jp -u "MountTargets[?SubnetId=='$SUBNET_ID'].IpAddress | [0]")
+  if [[ $? -ne 0 || -z $EFS_IP || $EFS_IP == "null" ]]; then
+    echo "$0: unable to find EFS mount target / IP in subnet $SUBNET_ID for EFS name '$EFS_NAME'"; exit 1
+  fi
+
   mount -t nfs -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 $EFS_IP:/ $bucket_mount
   if [[ $? -ne 0 ]]; then
     echo "unable to mount EFS $bucket IP $EFS_IP to $bucket_mount, exit code $?"; exit 1
@@ -84,7 +91,7 @@ done
 echo "
 $PROGRAM \
 -query $INPUT \
--db $DB \
+-db /db/nt/nt \
 -out $OUTPUT \
 -num_threads $THREADS \
 -task $TASK \
@@ -94,14 +101,14 @@ $BLAST_ARGS
 
 $PROGRAM \
 -query $INPUT \
--db $DB \
+-db /db/nt/nt \
 -out $OUTPUT \
 -num_threads $THREADS \
 -task $TASK \
 -outfmt $OUTFMT \
 $BLAST_ARGS
 
-for bucket_mount in $(echo $INPUT_MOUNT $OUTPUT_MOUNT $DB_MOUNT | tr ' ' '\n' | sort | uniq); do
+for bucket_mount in $(echo $INPUT_MOUNT $OUTPUT_MOUNT  | tr ' ' '\n' | sort | uniq); do
   umount $bucket_mount
 done
 
